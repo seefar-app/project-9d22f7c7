@@ -8,9 +8,12 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   authError: string | null;
+  resetEmail: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, phone: string, password: string) => Promise<boolean>;
   verifyOtp: (otp: string) => Promise<boolean>;
+  forgotPassword: (email: string) => Promise<boolean>;
+  resetPassword: (otp: string, newPassword: string, confirmPassword: string) => Promise<boolean>;
   logout: () => Promise<void>;
   initializeAuth: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
@@ -54,6 +57,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isLoading: true,
   authError: null,
+  resetEmail: null,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, authError: null });
@@ -145,6 +149,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  forgotPassword: async (email: string) => {
+    set({ isLoading: true, authError: null });
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      if (!email.includes('@')) {
+        set({ authError: 'Please enter a valid email address', isLoading: false });
+        return false;
+      }
+      
+      set({ resetEmail: email, isLoading: false, authError: null });
+      return true;
+    } catch (error) {
+      set({ authError: 'Failed to send reset code. Please try again.', isLoading: false });
+      return false;
+    }
+  },
+
+  resetPassword: async (otp: string, newPassword: string, confirmPassword: string) => {
+    set({ isLoading: true, authError: null });
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      if (otp.length !== 6 || !/^\d+$/.test(otp)) {
+        set({ authError: 'Invalid verification code', isLoading: false });
+        return false;
+      }
+      
+      if (newPassword.length < 6) {
+        set({ authError: 'Password must be at least 6 characters', isLoading: false });
+        return false;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        set({ authError: 'Passwords do not match', isLoading: false });
+        return false;
+      }
+      
+      set({ resetEmail: null, isLoading: false, authError: null });
+      return true;
+    } catch (error) {
+      set({ authError: 'Failed to reset password. Please try again.', isLoading: false });
+      return false;
+    }
+  },
+
   logout: async () => {
     set({ isLoading: true });
     
@@ -153,7 +205,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await SecureStore.deleteItemAsync('user_data');
       await SecureStore.deleteItemAsync('pending_otp');
       
-      set({ user: null, isAuthenticated: false, isLoading: false, authError: null });
+      set({ user: null, isAuthenticated: false, isLoading: false, authError: null, resetEmail: null });
     } catch (error) {
       set({ isLoading: false });
     }

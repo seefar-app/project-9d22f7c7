@@ -120,7 +120,10 @@ export default function LoginScreen() {
               isPassword
             />
 
-            <Pressable style={styles.forgotPassword}>
+            <Pressable 
+              style={styles.forgotPassword}
+              onPress={() => router.push('/(auth)/forgot-password')}
+            >
               <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>
                 Forgot Password?
               </Text>
