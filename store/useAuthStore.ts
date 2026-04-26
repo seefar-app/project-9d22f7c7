@@ -14,6 +14,11 @@ interface AuthState {
   logout: () => Promise<void>;
   initializeAuth: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
+  updateProfile: (name: string, email: string, phone: string) => void;
+  updateAvatar: (avatarUri: string) => void;
+  addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => void;
+  removePaymentMethod: (id: string) => void;
+  setDefaultPaymentMethod: (id: string) => void;
   clearError: () => void;
 }
 
@@ -178,6 +183,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get();
     if (user) {
       const updatedUser = { ...user, ...updates };
+      set({ user: updatedUser });
+      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    }
+  },
+
+  updateProfile: (name: string, email: string, phone: string) => {
+    const { user } = get();
+    if (user) {
+      const updatedUser = { ...user, name, email, phone };
+      set({ user: updatedUser });
+      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    }
+  },
+
+  updateAvatar: (avatarUri: string) => {
+    const { user } = get();
+    if (user) {
+      const updatedUser = { ...user, avatar: avatarUri };
+      set({ user: updatedUser });
+      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    }
+  },
+
+  addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => {
+    const { user } = get();
+    if (user) {
+      const newMethod: PaymentMethod = {
+        ...method,
+        id: Crypto.randomUUID(),
+        isDefault: user.savedPaymentMethods.length === 0,
+      };
+      const updatedUser = {
+        ...user,
+        savedPaymentMethods: [...user.savedPaymentMethods, newMethod],
+      };
+      set({ user: updatedUser });
+      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    }
+  },
+
+  removePaymentMethod: (id: string) => {
+    const { user } = get();
+    if (user) {
+      const updatedMethods = user.savedPaymentMethods.filter(m => m.id !== id);
+      if (updatedMethods.length > 0 && !updatedMethods.some(m => m.isDefault)) {
+        updatedMethods[0].isDefault = true;
+      }
+      const updatedUser = {
+        ...user,
+        savedPaymentMethods: updatedMethods,
+      };
+      set({ user: updatedUser });
+      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    }
+  },
+
+  setDefaultPaymentMethod: (id: string) => {
+    const { user } = get();
+    if (user) {
+      const updatedMethods = user.savedPaymentMethods.map(m => ({
+        ...m,
+        isDefault: m.id === id,
+      }));
+      const updatedUser = {
+        ...user,
+        savedPaymentMethods: updatedMethods,
+      };
       set({ user: updatedUser });
       SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
     }

@@ -79,21 +79,30 @@ export default function ProfileScreen() {
           icon: 'person-outline',
           label: 'Edit Profile',
           subtitle: user?.email,
-          onPress: () => {},
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/profile/edit');
+          },
           showArrow: true,
         },
         {
           icon: 'location-outline',
           label: 'Saved Addresses',
           subtitle: `${addresses.length} addresses`,
-          onPress: () => {},
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/profile/addresses');
+          },
           showArrow: true,
         },
         {
           icon: 'card-outline',
           label: 'Payment Methods',
           subtitle: `${user?.savedPaymentMethods.length || 0} cards`,
-          onPress: () => {},
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/profile/payments');
+          },
           showArrow: true,
         },
       ],
@@ -237,10 +246,7 @@ export default function ProfileScreen() {
                 {section.items.map((item, itemIndex) => (
                   <Pressable
                     key={item.label}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      item.onPress();
-                    }}
+                    onPress={item.onPress}
                     style={[
                       styles.menuItem,
                       itemIndex < section.items.length - 1 && {
