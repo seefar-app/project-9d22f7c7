@@ -1,0 +1,1653 @@
+{
+  "version": "1.1",
+  "generatedAt": "2026-04-26T13:07:43.886Z",
+  "schema": {
+    "sql": "-- Supabase PostgreSQL Schema for Seefar Food Delivery Platform\n-- Generated for React Native Expo App\n\n-- Enable necessary extensions\nCREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";\nCREATE EXTENSION IF NOT EXISTS \"pgcrypto\";\n\n-- Users table (no FK dependencies)\nCREATE TABLE IF NOT EXISTS public.users (\n  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,\n  name text,\n  email text UNIQUE,\n  phone text,\n  avatar text,\n  \"defaultAddressId\" uuid,\n  \"referralCode\" text,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.users ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Users can view their own profile\" ON public.users\n  FOR SELECT USING (auth.uid() = id);\n\nCREATE POLICY \"Users can update their own profile\" ON public.users\n  FOR UPDATE USING (auth.uid() = id);\n\nCREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);\nCREATE INDEX IF NOT EXISTS idx_users_phone ON public.users(phone);\n\n-- Restaurants table (no FK dependencies)\nCREATE TABLE IF NOT EXISTS public.restaurants (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  name text NOT NULL,\n  cuisine text,\n  rating numeric,\n  \"reviewCount\" integer DEFAULT 0,\n  \"deliveryTime\" text,\n  \"deliveryFee\" numeric,\n  \"minOrder\" numeric,\n  image text,\n  address text,\n  phone text,\n  \"operatingHours\" text,\n  latitude numeric,\n  longitude numeric,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.restaurants ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Restaurants are viewable by everyone\" ON public.restaurants\n  FOR SELECT USING (true);\n\nCREATE INDEX IF NOT EXISTS idx_restaurants_cuisine ON public.restaurants(cuisine);\nCREATE INDEX IF NOT EXISTS idx_restaurants_rating ON public.restaurants(rating);\nCREATE INDEX IF NOT EXISTS idx_restaurants_location ON public.restaurants(latitude, longitude);\n\n-- Drivers table (no FK dependencies)\nCREATE TABLE IF NOT EXISTS public.drivers (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  name text NOT NULL,\n  phone text,\n  avatar text,\n  vehicle text,\n  \"licensePlate\" text,\n  rating numeric,\n  \"currentLatitude\" numeric,\n  \"currentLongitude\" numeric,\n  status text,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.drivers ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Drivers are viewable by everyone\" ON public.drivers\n  FOR SELECT USING (true);\n\nCREATE INDEX IF NOT EXISTS idx_drivers_status ON public.drivers(status);\n\n-- Payment methods table (FK: users)\nCREATE TABLE IF NOT EXISTS public.payment_methods (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"userId\" uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  type text,\n  last4 text,\n  brand text,\n  \"isDefault\" boolean DEFAULT false,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.payment_methods ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Users can view their own payment methods\" ON public.payment_methods\n  FOR SELECT USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can insert their own payment methods\" ON public.payment_methods\n  FOR INSERT WITH CHECK (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can update their own payment methods\" ON public.payment_methods\n  FOR UPDATE USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can delete their own payment methods\" ON public.payment_methods\n  FOR DELETE USING (auth.uid() = \"userId\");\n\nCREATE INDEX IF NOT EXISTS idx_payment_methods_user ON public.payment_methods(\"userId\");\n\n-- Addresses table (FK: users)\nCREATE TABLE IF NOT EXISTS public.addresses (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"userId\" uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  label text,\n  street text,\n  apartment text,\n  city text,\n  zipcode text,\n  latitude numeric,\n  longitude numeric,\n  \"isDefault\" boolean DEFAULT false,\n  instructions text,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.addresses ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Users can view their own addresses\" ON public.addresses\n  FOR SELECT USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can insert their own addresses\" ON public.addresses\n  FOR INSERT WITH CHECK (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can update their own addresses\" ON public.addresses\n  FOR UPDATE USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can delete their own addresses\" ON public.addresses\n  FOR DELETE USING (auth.uid() = \"userId\");\n\nCREATE INDEX IF NOT EXISTS idx_addresses_user ON public.addresses(\"userId\");\n\n-- Menu items table (FK: restaurants)\nCREATE TABLE IF NOT EXISTS public.menu_items (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"restaurantId\" uuid NOT NULL REFERENCES public.restaurants(id) ON DELETE CASCADE,\n  name text NOT NULL,\n  description text,\n  price numeric,\n  image text,\n  category text,\n  \"isPopular\" boolean DEFAULT false,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Menu items are viewable by everyone\" ON public.menu_items\n  FOR SELECT USING (true);\n\nCREATE INDEX IF NOT EXISTS idx_menu_items_restaurant ON public.menu_items(\"restaurantId\");\nCREATE INDEX IF NOT EXISTS idx_menu_items_category ON public.menu_items(category);\n\n-- Customizations table (FK: menu_items)\nCREATE TABLE IF NOT EXISTS public.customizations (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"menuItemId\" uuid NOT NULL REFERENCES public.menu_items(id) ON DELETE CASCADE,\n  name text NOT NULL,\n  required boolean DEFAULT false,\n  \"maxSelections\" integer,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.customizations ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Customizations are viewable by everyone\" ON public.customizations\n  FOR SELECT USING (true);\n\nCREATE INDEX IF NOT EXISTS idx_customizations_menu_item ON public.customizations(\"menuItemId\");\n\n-- Customization options table (FK: customizations)\nCREATE TABLE IF NOT EXISTS public.customization_options (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"customizationId\" uuid NOT NULL REFERENCES public.customizations(id) ON DELETE CASCADE,\n  name text NOT NULL,\n  price numeric,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.customization_options ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Customization options are viewable by everyone\" ON public.customization_options\n  FOR SELECT USING (true);\n\nCREATE INDEX IF NOT EXISTS idx_customization_options_customization ON public.customization_options(\"customizationId\");\n\n-- Orders table (FK: restaurants, users, addresses, payment_methods, drivers)\nCREATE TABLE IF NOT EXISTS public.orders (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"restaurantId\" uuid NOT NULL REFERENCES public.restaurants(id) ON DELETE RESTRICT,\n  \"userId\" uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  subtotal numeric,\n  \"deliveryFee\" numeric,\n  \"serviceFee\" numeric,\n  tip numeric,\n  \"totalPrice\" numeric,\n  \"deliveryAddressId\" uuid REFERENCES public.addresses(id) ON DELETE SET NULL,\n  \"paymentMethodId\" uuid REFERENCES public.payment_methods(id) ON DELETE SET NULL,\n  status text,\n  \"driverId\" uuid REFERENCES public.drivers(id) ON DELETE SET NULL,\n  \"estimatedDelivery\" timestamptz,\n  rating integer,\n  review text,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Users can view their own orders\" ON public.orders\n  FOR SELECT USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can insert their own orders\" ON public.orders\n  FOR INSERT WITH CHECK (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can update their own orders\" ON public.orders\n  FOR UPDATE USING (auth.uid() = \"userId\");\n\nCREATE INDEX IF NOT EXISTS idx_orders_user ON public.orders(\"userId\");\nCREATE INDEX IF NOT EXISTS idx_orders_restaurant ON public.orders(\"restaurantId\");\nCREATE INDEX IF NOT EXISTS idx_orders_driver ON public.orders(\"driverId\");\nCREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);\nCREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at);\n\n-- Order items table (FK: orders, menu_items)\nCREATE TABLE IF NOT EXISTS public.order_items (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"orderId\" uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,\n  \"menuItemId\" uuid NOT NULL REFERENCES public.menu_items(id) ON DELETE RESTRICT,\n  quantity integer,\n  \"specialInstructions\" text,\n  \"totalPrice\" numeric,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Order items are viewable by order owner\" ON public.order_items\n  FOR SELECT USING (\n    \"orderId\" IN (\n      SELECT id FROM public.orders WHERE \"userId\" = auth.uid()\n    )\n  );\n\nCREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items(\"orderId\");\nCREATE INDEX IF NOT EXISTS idx_order_items_menu_item ON public.order_items(\"menuItemId\");\n\n-- Order item customizations table (FK: order_items, customizations)\nCREATE TABLE IF NOT EXISTS public.order_item_customizations (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"orderItemId\" uuid NOT NULL REFERENCES public.order_items(id) ON DELETE CASCADE,\n  \"customizationId\" uuid NOT NULL REFERENCES public.customizations(id) ON DELETE RESTRICT,\n  \"optionIds\" text[],\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.order_item_customizations ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Order item customizations are viewable by order owner\" ON public.order_item_customizations\n  FOR SELECT USING (\n    \"orderItemId\" IN (\n      SELECT id FROM public.order_items WHERE \"orderId\" IN (\n        SELECT id FROM public.orders WHERE \"userId\" = auth.uid()\n      )\n    )\n  );\n\nCREATE INDEX IF NOT EXISTS idx_order_item_customizations_order_item ON public.order_item_customizations(\"orderItemId\");\nCREATE INDEX IF NOT EXISTS idx_order_item_customizations_customization ON public.order_item_customizations(\"customizationId\");\n\n-- Reviews table (FK: orders, users, restaurants)\nCREATE TABLE IF NOT EXISTS public.reviews (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  \"orderId\" uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,\n  \"userId\" uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  \"userName\" text,\n  \"userAvatar\" text,\n  \"restaurantId\" uuid NOT NULL REFERENCES public.restaurants(id) ON DELETE CASCADE,\n  rating integer,\n  comment text,\n  created_at timestamptz DEFAULT now()\n);\n\nALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY \"Reviews are viewable by everyone\" ON public.reviews\n  FOR SELECT USING (true);\n\nCREATE POLICY \"Users can insert their own reviews\" ON public.reviews\n  FOR INSERT WITH CHECK (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can update their own reviews\" ON public.reviews\n  FOR UPDATE USING (auth.uid() = \"userId\");\n\nCREATE POLICY \"Users can delete their own reviews\" ON public.reviews\n  FOR DELETE USING (auth.uid() = \"userId\");\n\nCREATE INDEX IF NOT EXISTS idx_reviews_order ON public.reviews(\"orderId\");\nCREATE INDEX IF NOT EXISTS idx_reviews_user ON public.reviews(\"userId\");\nCREATE INDEX IF NOT EXISTS idx_reviews_restaurant ON public.reviews(\"restaurantId\");\n\n-- Handle new user signup\nCREATE OR REPLACE FUNCTION public.handle_new_user()\nRETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$\nBEGIN\n  INSERT INTO public.users (id, email, name, phone, avatar, \"referralCode\", created_at)\n  VALUES (\n    NEW.id,\n    NEW.email,\n    NEW.raw_user_meta_data ->> 'name',\n    NEW.raw_user_meta_data ->> 'phone',\n    NEW.raw_user_meta_data ->> 'avatar',\n    NEW.raw_user_meta_data ->> 'referralCode',\n    now()\n  )\n  ON CONFLICT (id) DO NOTHING;\n  RETURN NEW;\nEND; $$;\n\nDROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;\nCREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();\n\n-- Add foreign key constraint for users.defaultAddressId after addresses table exists\nALTER TABLE public.users\nADD CONSTRAINT fk_users_default_address\nFOREIGN KEY (\"defaultAddressId\") REFERENCES public.addresses(id) ON DELETE SET NULL;\n\n-- === Deterministic CRUD policies for user-owned tables (generated by SupabaseConfigAgent) ===\n-- Every table with a direct or transitive ownership path to auth.users gets INSERT/UPDATE/DELETE\n-- policies so client-side writes by the owner succeed while cross-user writes are blocked.\n-- Idempotent: safe to re-run.\nDROP POLICY IF EXISTS \"Users can insert own payment_methods\" ON public.\"payment_methods\";\nCREATE POLICY \"Users can insert own payment_methods\" ON public.\"payment_methods\" FOR INSERT WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can update own payment_methods\" ON public.\"payment_methods\";\nCREATE POLICY \"Users can update own payment_methods\" ON public.\"payment_methods\" FOR UPDATE USING (auth.uid() = \"userId\") WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can delete own payment_methods\" ON public.\"payment_methods\";\nCREATE POLICY \"Users can delete own payment_methods\" ON public.\"payment_methods\" FOR DELETE USING (auth.uid() = \"userId\");\n\nDROP POLICY IF EXISTS \"Users can insert own addresses\" ON public.\"addresses\";\nCREATE POLICY \"Users can insert own addresses\" ON public.\"addresses\" FOR INSERT WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can update own addresses\" ON public.\"addresses\";\nCREATE POLICY \"Users can update own addresses\" ON public.\"addresses\" FOR UPDATE USING (auth.uid() = \"userId\") WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can delete own addresses\" ON public.\"addresses\";\nCREATE POLICY \"Users can delete own addresses\" ON public.\"addresses\" FOR DELETE USING (auth.uid() = \"userId\");\n\nDROP POLICY IF EXISTS \"Users can insert own orders\" ON public.\"orders\";\nCREATE POLICY \"Users can insert own orders\" ON public.\"orders\" FOR INSERT WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can update own orders\" ON public.\"orders\";\nCREATE POLICY \"Users can update own orders\" ON public.\"orders\" FOR UPDATE USING (auth.uid() = \"userId\") WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can delete own orders\" ON public.\"orders\";\nCREATE POLICY \"Users can delete own orders\" ON public.\"orders\" FOR DELETE USING (auth.uid() = \"userId\");\n\nDROP POLICY IF EXISTS \"Users can insert own order_items\" ON public.\"order_items\";\nCREATE POLICY \"Users can insert own order_items\" ON public.\"order_items\" FOR INSERT WITH CHECK (\"orderId\" IN (SELECT \"id\" FROM public.\"orders\" WHERE \"userId\" = auth.uid()));\nDROP POLICY IF EXISTS \"Users can update own order_items\" ON public.\"order_items\";\nCREATE POLICY \"Users can update own order_items\" ON public.\"order_items\" FOR UPDATE USING (\"orderId\" IN (SELECT \"id\" FROM public.\"orders\" WHERE \"userId\" = auth.uid())) WITH CHECK (\"orderId\" IN (SELECT \"id\" FROM public.\"orders\" WHERE \"userId\" = auth.uid()));\nDROP POLICY IF EXISTS \"Users can delete own order_items\" ON public.\"order_items\";\nCREATE POLICY \"Users can delete own order_items\" ON public.\"order_items\" FOR DELETE USING (\"orderId\" IN (SELECT \"id\" FROM public.\"orders\" WHERE \"userId\" = auth.uid()));\n\nDROP POLICY IF EXISTS \"Users can insert own reviews\" ON public.\"reviews\";\nCREATE POLICY \"Users can insert own reviews\" ON public.\"reviews\" FOR INSERT WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can update own reviews\" ON public.\"reviews\";\nCREATE POLICY \"Users can update own reviews\" ON public.\"reviews\" FOR UPDATE USING (auth.uid() = \"userId\") WITH CHECK (auth.uid() = \"userId\");\nDROP POLICY IF EXISTS \"Users can delete own reviews\" ON public.\"reviews\";\nCREATE POLICY \"Users can delete own reviews\" ON public.\"reviews\" FOR DELETE USING (auth.uid() = \"userId\");\n\n\n-- === Deterministic storage.objects policies (generated by SupabaseConfigAgent) ===\n-- Every declared bucket gets owner-scoped INSERT/UPDATE/DELETE policies using the\n-- first path segment as the owner uid. Public buckets additionally get public-read\n-- SELECT so getPublicUrl(...) resolves instead of returning \"Bucket not found\" 404.\n-- Idempotent: safe to re-run.\nDROP POLICY IF EXISTS \"avatars_public_read\" ON storage.objects;\nCREATE POLICY \"avatars_public_read\" ON storage.objects FOR SELECT TO public USING (bucket_id = 'avatars');\nDROP POLICY IF EXISTS \"avatars_owner_insert\" ON storage.objects;\nCREATE POLICY \"avatars_owner_insert\" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"avatars_owner_update\" ON storage.objects;\nCREATE POLICY \"avatars_owner_update\" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text) WITH CHECK (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"avatars_owner_delete\" ON storage.objects;\nCREATE POLICY \"avatars_owner_delete\" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);\n\nDROP POLICY IF EXISTS \"restaurant-images_public_read\" ON storage.objects;\nCREATE POLICY \"restaurant-images_public_read\" ON storage.objects FOR SELECT TO public USING (bucket_id = 'restaurant-images');\nDROP POLICY IF EXISTS \"restaurant-images_owner_insert\" ON storage.objects;\nCREATE POLICY \"restaurant-images_owner_insert\" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'restaurant-images' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"restaurant-images_owner_update\" ON storage.objects;\nCREATE POLICY \"restaurant-images_owner_update\" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'restaurant-images' AND (storage.foldername(name))[1] = auth.uid()::text) WITH CHECK (bucket_id = 'restaurant-images' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"restaurant-images_owner_delete\" ON storage.objects;\nCREATE POLICY \"restaurant-images_owner_delete\" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'restaurant-images' AND (storage.foldername(name))[1] = auth.uid()::text);\n\nDROP POLICY IF EXISTS \"menu-items_owner_insert\" ON storage.objects;\nCREATE POLICY \"menu-items_owner_insert\" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'menu-items' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"menu-items_owner_update\" ON storage.objects;\nCREATE POLICY \"menu-items_owner_update\" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'menu-items' AND (storage.foldername(name))[1] = auth.uid()::text) WITH CHECK (bucket_id = 'menu-items' AND (storage.foldername(name))[1] = auth.uid()::text);\nDROP POLICY IF EXISTS \"menu-items_owner_delete\" ON storage.objects;\nCREATE POLICY \"menu-items_owner_delete\" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'menu-items' AND (storage.foldername(name))[1] = auth.uid()::text);\n",
+    "tables": [
+      {
+        "name": "users",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "avatar",
+            "type": "text"
+          },
+          {
+            "name": "defaultAddressId",
+            "type": "uuid"
+          },
+          {
+            "name": "referralCode",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "payment_methods",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "userId",
+            "type": "uuid"
+          },
+          {
+            "name": "type",
+            "type": "text"
+          },
+          {
+            "name": "last4",
+            "type": "text"
+          },
+          {
+            "name": "brand",
+            "type": "text"
+          },
+          {
+            "name": "isDefault",
+            "type": "boolean"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "restaurants",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "cuisine",
+            "type": "text"
+          },
+          {
+            "name": "rating",
+            "type": "numeric"
+          },
+          {
+            "name": "reviewCount",
+            "type": "integer"
+          },
+          {
+            "name": "deliveryTime",
+            "type": "text"
+          },
+          {
+            "name": "deliveryFee",
+            "type": "numeric"
+          },
+          {
+            "name": "minOrder",
+            "type": "numeric"
+          },
+          {
+            "name": "image",
+            "type": "text"
+          },
+          {
+            "name": "address",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "operatingHours",
+            "type": "text"
+          },
+          {
+            "name": "latitude",
+            "type": "numeric"
+          },
+          {
+            "name": "longitude",
+            "type": "numeric"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "menu_items",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "description",
+            "type": "text"
+          },
+          {
+            "name": "price",
+            "type": "numeric"
+          },
+          {
+            "name": "image",
+            "type": "text"
+          },
+          {
+            "name": "category",
+            "type": "text"
+          },
+          {
+            "name": "isPopular",
+            "type": "boolean"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "customizations",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "menuItemId",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "required",
+            "type": "boolean"
+          },
+          {
+            "name": "maxSelections",
+            "type": "integer"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "customization_options",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "customizationId",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "price",
+            "type": "numeric"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "addresses",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "userId",
+            "type": "uuid"
+          },
+          {
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "name": "street",
+            "type": "text"
+          },
+          {
+            "name": "apartment",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "zipcode",
+            "type": "text"
+          },
+          {
+            "name": "latitude",
+            "type": "numeric"
+          },
+          {
+            "name": "longitude",
+            "type": "numeric"
+          },
+          {
+            "name": "isDefault",
+            "type": "boolean"
+          },
+          {
+            "name": "instructions",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid"
+          },
+          {
+            "name": "userId",
+            "type": "uuid"
+          },
+          {
+            "name": "subtotal",
+            "type": "numeric"
+          },
+          {
+            "name": "deliveryFee",
+            "type": "numeric"
+          },
+          {
+            "name": "serviceFee",
+            "type": "numeric"
+          },
+          {
+            "name": "tip",
+            "type": "numeric"
+          },
+          {
+            "name": "totalPrice",
+            "type": "numeric"
+          },
+          {
+            "name": "deliveryAddressId",
+            "type": "uuid"
+          },
+          {
+            "name": "paymentMethodId",
+            "type": "uuid"
+          },
+          {
+            "name": "status",
+            "type": "text"
+          },
+          {
+            "name": "driverId",
+            "type": "uuid"
+          },
+          {
+            "name": "estimatedDelivery",
+            "type": "timestamptz"
+          },
+          {
+            "name": "rating",
+            "type": "integer"
+          },
+          {
+            "name": "review",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "order_items",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "orderId",
+            "type": "uuid"
+          },
+          {
+            "name": "menuItemId",
+            "type": "uuid"
+          },
+          {
+            "name": "quantity",
+            "type": "integer"
+          },
+          {
+            "name": "specialInstructions",
+            "type": "text"
+          },
+          {
+            "name": "totalPrice",
+            "type": "numeric"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "order_item_customizations",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "orderItemId",
+            "type": "uuid"
+          },
+          {
+            "name": "customizationId",
+            "type": "uuid"
+          },
+          {
+            "name": "optionIds",
+            "type": "text[]"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "drivers",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "avatar",
+            "type": "text"
+          },
+          {
+            "name": "vehicle",
+            "type": "text"
+          },
+          {
+            "name": "licensePlate",
+            "type": "text"
+          },
+          {
+            "name": "rating",
+            "type": "numeric"
+          },
+          {
+            "name": "currentLatitude",
+            "type": "numeric"
+          },
+          {
+            "name": "currentLongitude",
+            "type": "numeric"
+          },
+          {
+            "name": "status",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      },
+      {
+        "name": "reviews",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "orderId",
+            "type": "uuid"
+          },
+          {
+            "name": "userId",
+            "type": "uuid"
+          },
+          {
+            "name": "userName",
+            "type": "text"
+          },
+          {
+            "name": "userAvatar",
+            "type": "text"
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid"
+          },
+          {
+            "name": "rating",
+            "type": "integer"
+          },
+          {
+            "name": "comment",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz"
+          }
+        ]
+      }
+    ]
+  },
+  "auth": {
+    "external_email_enabled": true,
+    "mailer_autoconfirm": true
+  },
+  "storage": {
+    "buckets": [
+      {
+        "name": "avatars",
+        "public": true,
+        "file_size_limit": 5242880,
+        "options": {
+          "public": true,
+          "allowedMimeTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+          ],
+          "fileSizeLimit": 5242880
+        }
+      },
+      {
+        "name": "restaurant-images",
+        "public": true,
+        "file_size_limit": 10485760,
+        "options": {
+          "public": true,
+          "allowedMimeTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+          ],
+          "fileSizeLimit": 5242880
+        }
+      },
+      {
+        "name": "menu-items",
+        "public": true,
+        "file_size_limit": 10485760,
+        "options": {
+          "public": false,
+          "fileSizeLimit": 5242880
+        }
+      }
+    ]
+  },
+  "supabase": {
+    "projectRef": "gtsgoabroyajmnyoyqoo",
+    "projectUrl": "https://gtsgoabroyajmnyoyqoo.supabase.co",
+    "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0c2dvYWJyb3lham1ueW95cW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxODQzMTYsImV4cCI6MjA5Mjc2MDMxNn0.U0o7Uan7pxrqU4G6oKr7cG4N1dk5QB2OqJcO1qrizhI",
+    "status": "ready"
+  },
+  "consumers": {
+    "mobile": {
+      "projectId": null,
+      "projectName": null,
+      "projectPath": "/Users/khalilhaif/Desktop/dzairBuilder/generated-projects/project-9d22f7c7",
+      "lastGeneratedAt": "2026-04-26T13:07:43.886Z",
+      "contractHash": "9cf75433fe511dcd8fbca87bc7ca55d684f246ec3254c3f828c7462c398c74e7"
+    },
+    "adminPanel": {
+      "projectId": null,
+      "projectName": null,
+      "projectPath": null,
+      "lastGeneratedAt": null,
+      "contractHash": null
+    }
+  },
+  "admin": {
+    "resources": [
+      {
+        "table": "users",
+        "label": "Users",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "label": "Email",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "phone",
+            "type": "text",
+            "label": "Phone",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "avatar",
+            "type": "text",
+            "label": "Avatar",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "defaultAddressId",
+            "type": "uuid",
+            "label": "DefaultAddressId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "referralCode",
+            "type": "text",
+            "label": "ReferralCode",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "payment_methods",
+        "label": "Payment Methods",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "userId",
+            "type": "uuid",
+            "label": "UserId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "type",
+            "type": "text",
+            "label": "Type",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "last4",
+            "type": "text",
+            "label": "Last4",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "brand",
+            "type": "text",
+            "label": "Brand",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "isDefault",
+            "type": "boolean",
+            "label": "IsDefault",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "restaurants",
+        "label": "Restaurants",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "cuisine",
+            "type": "text",
+            "label": "Cuisine",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "rating",
+            "type": "numeric",
+            "label": "Rating",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "reviewCount",
+            "type": "integer",
+            "label": "ReviewCount",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "deliveryTime",
+            "type": "text",
+            "label": "DeliveryTime",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "deliveryFee",
+            "type": "numeric",
+            "label": "DeliveryFee",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "minOrder",
+            "type": "numeric",
+            "label": "MinOrder",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "image",
+            "type": "text",
+            "label": "Image",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "address",
+            "type": "text",
+            "label": "Address",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "phone",
+            "type": "text",
+            "label": "Phone",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "operatingHours",
+            "type": "text",
+            "label": "OperatingHours",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "latitude",
+            "type": "numeric",
+            "label": "Latitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "longitude",
+            "type": "numeric",
+            "label": "Longitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "menu_items",
+        "label": "Menu Items",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid",
+            "label": "RestaurantId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "label": "Description",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "price",
+            "type": "numeric",
+            "label": "Price",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "image",
+            "type": "text",
+            "label": "Image",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "category",
+            "type": "text",
+            "label": "Category",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "isPopular",
+            "type": "boolean",
+            "label": "IsPopular",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "customizations",
+        "label": "Customizations",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "menuItemId",
+            "type": "uuid",
+            "label": "MenuItemId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "required",
+            "type": "boolean",
+            "label": "Required",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "maxSelections",
+            "type": "integer",
+            "label": "MaxSelections",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "customization_options",
+        "label": "Customization Options",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "customizationId",
+            "type": "uuid",
+            "label": "CustomizationId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "price",
+            "type": "numeric",
+            "label": "Price",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "addresses",
+        "label": "Addresses",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "userId",
+            "type": "uuid",
+            "label": "UserId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "label",
+            "type": "text",
+            "label": "Label",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "street",
+            "type": "text",
+            "label": "Street",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "apartment",
+            "type": "text",
+            "label": "Apartment",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "label": "City",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "zipcode",
+            "type": "text",
+            "label": "Zipcode",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "latitude",
+            "type": "numeric",
+            "label": "Latitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "longitude",
+            "type": "numeric",
+            "label": "Longitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "isDefault",
+            "type": "boolean",
+            "label": "IsDefault",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "instructions",
+            "type": "text",
+            "label": "Instructions",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "orders",
+        "label": "Orders",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid",
+            "label": "RestaurantId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "userId",
+            "type": "uuid",
+            "label": "UserId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "subtotal",
+            "type": "numeric",
+            "label": "Subtotal",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "deliveryFee",
+            "type": "numeric",
+            "label": "DeliveryFee",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "serviceFee",
+            "type": "numeric",
+            "label": "ServiceFee",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "tip",
+            "type": "numeric",
+            "label": "Tip",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "totalPrice",
+            "type": "numeric",
+            "label": "TotalPrice",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "deliveryAddressId",
+            "type": "uuid",
+            "label": "DeliveryAddressId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "paymentMethodId",
+            "type": "uuid",
+            "label": "PaymentMethodId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "label": "Status",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "driverId",
+            "type": "uuid",
+            "label": "DriverId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "estimatedDelivery",
+            "type": "timestamptz",
+            "label": "EstimatedDelivery",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "rating",
+            "type": "integer",
+            "label": "Rating",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "review",
+            "type": "text",
+            "label": "Review",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamptz",
+            "label": "Updated At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "order_items",
+        "label": "Order Items",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "orderId",
+            "type": "uuid",
+            "label": "OrderId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "menuItemId",
+            "type": "uuid",
+            "label": "MenuItemId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "quantity",
+            "type": "integer",
+            "label": "Quantity",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "specialInstructions",
+            "type": "text",
+            "label": "SpecialInstructions",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "totalPrice",
+            "type": "numeric",
+            "label": "TotalPrice",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "order_item_customizations",
+        "label": "Order Item Customizations",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "orderItemId",
+            "type": "uuid",
+            "label": "OrderItemId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "customizationId",
+            "type": "uuid",
+            "label": "CustomizationId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "optionIds",
+            "type": "text[]",
+            "label": "OptionIds",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "drivers",
+        "label": "Drivers",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "phone",
+            "type": "text",
+            "label": "Phone",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "avatar",
+            "type": "text",
+            "label": "Avatar",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "vehicle",
+            "type": "text",
+            "label": "Vehicle",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "licensePlate",
+            "type": "text",
+            "label": "LicensePlate",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "rating",
+            "type": "numeric",
+            "label": "Rating",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "currentLatitude",
+            "type": "numeric",
+            "label": "CurrentLatitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "currentLongitude",
+            "type": "numeric",
+            "label": "CurrentLongitude",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "label": "Status",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "table": "reviews",
+        "label": "Reviews",
+        "enabled": true,
+        "operations": [
+          "list",
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "label": "Id",
+            "visible": true,
+            "editable": false,
+            "required": false
+          },
+          {
+            "name": "orderId",
+            "type": "uuid",
+            "label": "OrderId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "userId",
+            "type": "uuid",
+            "label": "UserId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "userName",
+            "type": "text",
+            "label": "UserName",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "userAvatar",
+            "type": "text",
+            "label": "UserAvatar",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "restaurantId",
+            "type": "uuid",
+            "label": "RestaurantId",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "rating",
+            "type": "integer",
+            "label": "Rating",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "comment",
+            "type": "text",
+            "label": "Comment",
+            "visible": true,
+            "editable": true,
+            "required": false
+          },
+          {
+            "name": "created_at",
+            "type": "timestamptz",
+            "label": "Created At",
+            "visible": true,
+            "editable": false,
+            "required": false
+          }
+        ]
+      }
+    ],
+    "sync": {
+      "status": "unknown",
+      "pendingActions": [],
+      "lastCheckedAt": null
+    }
+  },
+  "sync": {
+    "status": "unknown",
+    "pendingActions": [],
+    "lastCheckedAt": null
+  },
+  "contractHash": "9cf75433fe511dcd8fbca87bc7ca55d684f246ec3254c3f828c7462c398c74e7"
+}

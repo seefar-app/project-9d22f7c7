@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import { supabase } from '@/lib/supabase';
 import { User, PaymentMethod } from '@/types';
 
 interface AuthState {
@@ -17,39 +16,24 @@ interface AuthState {
   logout: () => Promise<void>;
   initializeAuth: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
-  updateProfile: (name: string, email: string, phone: string) => void;
-  updateAvatar: (avatarUri: string) => void;
-  addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => void;
-  removePaymentMethod: (id: string) => void;
-  setDefaultPaymentMethod: (id: string) => void;
+  updateProfile: (name: string, email: string, phone: string) => Promise<void>;
+  updateAvatar: (avatarUri: string) => Promise<void>;
+  addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => Promise<void>;
+  removePaymentMethod: (id: string) => Promise<void>;
+  setDefaultPaymentMethod: (id: string) => Promise<void>;
   clearError: () => void;
 }
 
-const mockPaymentMethods: PaymentMethod[] = [
-  {
-    id: Crypto.randomUUID(),
-    type: 'card',
-    last4: '4242',
-    brand: 'Visa',
-    isDefault: true,
-  },
-  {
-    id: Crypto.randomUUID(),
-    type: 'apple_pay',
-    isDefault: false,
-  },
-];
-
-const createMockUser = (name: string, email: string, phone: string): User => ({
-  id: Crypto.randomUUID(),
-  name,
-  email,
-  phone,
-  avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff&size=200`,
-  defaultAddressId: null,
-  savedPaymentMethods: mockPaymentMethods,
-  referralCode: `FROST${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  createdAt: new Date(),
+const mapDatabaseUserToUser = (dbUser: any): User => ({
+  id: dbUser.id,
+  name: dbUser.name || '',
+  email: dbUser.email || '',
+  phone: dbUser.phone || '',
+  avatar: dbUser.avatar || '',
+  defaultAddressId: dbUser.defaultAddressId || null,
+  savedPaymentMethods: [],
+  referralCode: dbUser.referralCode || '',
+  createdAt: new Date(dbUser.created_at),
 });
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -61,25 +45,65 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, authError: null });
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       if (!email.includes('@')) {
         set({ authError: 'Please enter a valid email address', isLoading: false });
         return false;
       }
-      
+
       if (password.length < 6) {
         set({ authError: 'Password must be at least 6 characters', isLoading: false });
         return false;
       }
 
-      const user = createMockUser('Alex Johnson', email, '+1 555-123-4567');
-      
-      await SecureStore.setItemAsync('auth_token', Crypto.randomUUID());
-      await SecureStore.setItemAsync('user_data', JSON.stringify(user));
-      
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        let friendlyMessage = 'Login failed. Please try again.';
+        if (authError.message.includes('Invalid login credentials')) {
+          friendlyMessage = 'Incorrect email or password. Please try again.';
+        } else if (authError.message.includes('Email not confirmed')) {
+          friendlyMessage = 'Please verify your email address.';
+        }
+        set({ authError: friendlyMessage, isLoading: false });
+        return false;
+      }
+
+      if (!authData.user) {
+        set({ authError: 'Login failed. Please try again.', isLoading: false });
+        return false;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        set({ authError: 'Failed to load user profile.', isLoading: false });
+        return false;
+      }
+
+      const user = mapDatabaseUserToUser(profile);
+
+      const { data: paymentMethods } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('userId', authData.user.id);
+
+      user.savedPaymentMethods = (paymentMethods || []).map((pm: any) => ({
+        id: pm.id,
+        type: pm.type,
+        last4: pm.last4,
+        brand: pm.brand,
+        isDefault: pm.isDefault,
+      }));
+
       set({ user, isAuthenticated: true, isLoading: false, authError: null });
       return true;
     } catch (error) {
@@ -90,37 +114,70 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signup: async (name: string, email: string, phone: string, password: string) => {
     set({ isLoading: true, authError: null });
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       if (name.length < 2) {
         set({ authError: 'Please enter your full name', isLoading: false });
         return false;
       }
-      
+
       if (!email.includes('@')) {
         set({ authError: 'Please enter a valid email address', isLoading: false });
         return false;
       }
-      
+
       if (phone.length < 10) {
         set({ authError: 'Please enter a valid phone number', isLoading: false });
         return false;
       }
-      
+
       if (password.length < 6) {
         set({ authError: 'Password must be at least 6 characters', isLoading: false });
         return false;
       }
 
-      const user = createMockUser(name, email, phone);
-      
-      await SecureStore.setItemAsync('auth_token', Crypto.randomUUID());
-      await SecureStore.setItemAsync('user_data', JSON.stringify(user));
-      await SecureStore.setItemAsync('pending_otp', 'true');
-      
-      set({ user, isAuthenticated: false, isLoading: false, authError: null });
+      const { data: authData, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            phone,
+          },
+        },
+      });
+
+      if (error) {
+        let friendlyMessage = 'Signup failed. Please try again.';
+        if (error.message.includes('already registered')) {
+          friendlyMessage = 'An account with this email already exists.';
+        } else if (error.message.includes('Password')) {
+          friendlyMessage = 'Password does not meet requirements.';
+        }
+        set({ authError: friendlyMessage, isLoading: false });
+        return false;
+      }
+
+      if (!authData.user) {
+        set({ authError: 'Signup failed. Please try again.', isLoading: false });
+        return false;
+      }
+
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (!profile) {
+        set({ authError: 'Failed to create user profile.', isLoading: false });
+        return false;
+      }
+
+      const user = mapDatabaseUserToUser(profile);
+      user.savedPaymentMethods = [];
+
+      set({ user, isAuthenticated: true, isLoading: false, authError: null });
       return true;
     } catch (error) {
       set({ authError: 'Signup failed. Please try again.', isLoading: false });
@@ -130,17 +187,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   verifyOtp: async (otp: string) => {
     set({ isLoading: true, authError: null });
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       if (otp.length !== 6 || !/^\d+$/.test(otp)) {
         set({ authError: 'Please enter a valid 6-digit code', isLoading: false });
         return false;
       }
-      
-      await SecureStore.deleteItemAsync('pending_otp');
-      
+
       set({ isAuthenticated: true, isLoading: false, authError: null });
       return true;
     } catch (error) {
@@ -151,15 +204,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   forgotPassword: async (email: string) => {
     set({ isLoading: true, authError: null });
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       if (!email.includes('@')) {
         set({ authError: 'Please enter a valid email address', isLoading: false });
         return false;
       }
-      
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'seefar://reset-password',
+      });
+
+      if (error) {
+        set({ authError: 'Failed to send reset code. Please try again.', isLoading: false });
+        return false;
+      }
+
       set({ resetEmail: email, isLoading: false, authError: null });
       return true;
     } catch (error) {
@@ -170,25 +230,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   resetPassword: async (otp: string, newPassword: string, confirmPassword: string) => {
     set({ isLoading: true, authError: null });
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       if (otp.length !== 6 || !/^\d+$/.test(otp)) {
         set({ authError: 'Invalid verification code', isLoading: false });
         return false;
       }
-      
+
       if (newPassword.length < 6) {
         set({ authError: 'Password must be at least 6 characters', isLoading: false });
         return false;
       }
-      
+
       if (newPassword !== confirmPassword) {
         set({ authError: 'Passwords do not match', isLoading: false });
         return false;
       }
-      
+
       set({ resetEmail: null, isLoading: false, authError: null });
       return true;
     } catch (error) {
@@ -199,12 +257,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     set({ isLoading: true });
-    
+
     try {
-      await SecureStore.deleteItemAsync('auth_token');
-      await SecureStore.deleteItemAsync('user_data');
-      await SecureStore.deleteItemAsync('pending_otp');
-      
+      await supabase.auth.signOut();
       set({ user: null, isAuthenticated: false, isLoading: false, authError: null, resetEmail: null });
     } catch (error) {
       set({ isLoading: false });
@@ -213,19 +268,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initializeAuth: async () => {
     set({ isLoading: true });
-    
+
     try {
-      const token = await SecureStore.getItemAsync('auth_token');
-      const userData = await SecureStore.getItemAsync('user_data');
-      const pendingOtp = await SecureStore.getItemAsync('pending_otp');
-      
-      if (token && userData && !pendingOtp) {
-        const user = JSON.parse(userData);
-        user.createdAt = new Date(user.createdAt);
-        set({ user, isAuthenticated: true, isLoading: false });
-      } else {
-        set({ isLoading: false });
+      const { data: sessionData } = await supabase.auth.getSession();
+
+      if (sessionData.session?.user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', sessionData.session.user.id)
+          .single();
+
+        if (profile) {
+          const user = mapDatabaseUserToUser(profile);
+
+          const { data: paymentMethods } = await supabase
+            .from('payment_methods')
+            .select('*')
+            .eq('userId', sessionData.session.user.id);
+
+          user.savedPaymentMethods = (paymentMethods || []).map((pm: any) => ({
+            id: pm.id,
+            type: pm.type,
+            last4: pm.last4,
+            brand: pm.brand,
+            isDefault: pm.isDefault,
+          }));
+
+          set({ user, isAuthenticated: true, isLoading: false });
+          return;
+        }
       }
+
+      set({ isLoading: false });
     } catch (error) {
       set({ isLoading: false });
     }
@@ -236,74 +311,164 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (user) {
       const updatedUser = { ...user, ...updates };
       set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
     }
   },
 
-  updateProfile: (name: string, email: string, phone: string) => {
+  updateProfile: async (name: string, email: string, phone: string) => {
     const { user } = get();
-    if (user) {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ name, email, phone })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
       const updatedUser = { ...user, name, email, phone };
       set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error('Failed to update profile:', error);
     }
   },
 
-  updateAvatar: (avatarUri: string) => {
+  updateAvatar: async (avatarUri: string) => {
     const { user } = get();
-    if (user) {
-      const updatedUser = { ...user, avatar: avatarUri };
-      set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
-    }
-  },
+    if (!user) return;
 
-  addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => {
-    const { user } = get();
-    if (user) {
-      const newMethod: PaymentMethod = {
-        ...method,
-        id: Crypto.randomUUID(),
-        isDefault: user.savedPaymentMethods.length === 0,
-      };
-      const updatedUser = {
-        ...user,
-        savedPaymentMethods: [...user.savedPaymentMethods, newMethod],
-      };
-      set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
-    }
-  },
+    try {
+      const fileName = `avatar_${Date.now()}.jpg`;
+      const base64 = await fetch(avatarUri).then(r => r.blob());
 
-  removePaymentMethod: (id: string) => {
-    const { user } = get();
-    if (user) {
-      const updatedMethods = user.savedPaymentMethods.filter(m => m.id !== id);
-      if (updatedMethods.length > 0 && !updatedMethods.some(m => m.isDefault)) {
-        updatedMethods[0].isDefault = true;
+      const { data: existing } = await supabase.storage
+        .from('avatars')
+        .list(user.id);
+
+      if (existing && existing.length > 0) {
+        await supabase.storage
+          .from('avatars')
+          .remove(existing.map(f => `${user.id}/${f.name}`));
       }
-      const updatedUser = {
-        ...user,
-        savedPaymentMethods: updatedMethods,
-      };
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(`${user.id}/${fileName}`, base64, {
+          upsert: false,
+          contentType: 'image/jpeg',
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrl } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(`${user.id}/${fileName}`);
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ avatar: publicUrl.publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      const updatedUser = { ...user, avatar: publicUrl.publicUrl };
       set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error('Failed to update avatar:', error);
     }
   },
 
-  setDefaultPaymentMethod: (id: string) => {
+  addPaymentMethod: async (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => {
     const { user } = get();
-    if (user) {
+    if (!user) return;
+
+    try {
+      const isDefault = user.savedPaymentMethods.length === 0;
+
+      const { data: newMethod, error } = await supabase
+        .from('payment_methods')
+        .insert({
+          userId: user.id,
+          type: method.type,
+          last4: method.last4,
+          brand: method.brand,
+          isDefault,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const updatedMethods = [
+        ...user.savedPaymentMethods,
+        {
+          id: newMethod.id,
+          type: newMethod.type,
+          last4: newMethod.last4,
+          brand: newMethod.brand,
+          isDefault: newMethod.isDefault,
+        },
+      ];
+
+      const updatedUser = { ...user, savedPaymentMethods: updatedMethods };
+      set({ user: updatedUser });
+    } catch (error) {
+      console.error('Failed to add payment method:', error);
+    }
+  },
+
+  removePaymentMethod: async (id: string) => {
+    const { user } = get();
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      const updatedMethods = user.savedPaymentMethods.filter(m => m.id !== id);
+
+      if (updatedMethods.length > 0 && !updatedMethods.some(m => m.isDefault)) {
+        const firstMethod = updatedMethods[0];
+        await supabase
+          .from('payment_methods')
+          .update({ isDefault: true })
+          .eq('id', firstMethod.id);
+
+        firstMethod.isDefault = true;
+      }
+
+      const updatedUser = { ...user, savedPaymentMethods: updatedMethods };
+      set({ user: updatedUser });
+    } catch (error) {
+      console.error('Failed to remove payment method:', error);
+    }
+  },
+
+  setDefaultPaymentMethod: async (id: string) => {
+    const { user } = get();
+    if (!user) return;
+
+    try {
       const updatedMethods = user.savedPaymentMethods.map(m => ({
         ...m,
         isDefault: m.id === id,
       }));
-      const updatedUser = {
-        ...user,
-        savedPaymentMethods: updatedMethods,
-      };
+
+      for (const method of updatedMethods) {
+        await supabase
+          .from('payment_methods')
+          .update({ isDefault: method.isDefault })
+          .eq('id', method.id);
+      }
+
+      const updatedUser = { ...user, savedPaymentMethods: updatedMethods };
       set({ user: updatedUser });
-      SecureStore.setItemAsync('user_data', JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error('Failed to set default payment method:', error);
     }
   },
 

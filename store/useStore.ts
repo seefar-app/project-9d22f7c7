@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as Crypto from 'expo-crypto';
+import { supabase } from '@/lib/supabase';
 import {
   Restaurant,
   MenuItem,
@@ -44,339 +45,81 @@ interface StoreState {
   fetchOrders: () => Promise<void>;
   getOrderById: (id: string) => Order | undefined;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
-  rateOrder: (orderId: string, rating: number, review: string) => void;
+  rateOrder: (orderId: string, rating: number, review: string) => Promise<void>;
   reorder: (orderId: string) => void;
 
   // Address actions
-  addAddress: (address: Omit<Address, 'id'>) => void;
-  updateAddress: (id: string, updates: Partial<Address>) => void;
-  deleteAddress: (id: string) => void;
-  setDefaultAddress: (id: string) => void;
+  addAddress: (address: Omit<Address, 'id'>) => Promise<void>;
+  updateAddress: (id: string, updates: Partial<Address>) => Promise<void>;
+  deleteAddress: (id: string) => Promise<void>;
+  setDefaultAddress: (id: string) => Promise<void>;
   selectAddress: (id: string) => void;
 }
 
-// Mock data
-const mockDriver: Driver = {
-  id: Crypto.randomUUID(),
-  name: 'Marcus Chen',
-  phone: '+1 555-987-6543',
-  avatar: 'https://randomuser.me/api/portraits/men/45.jpg',
-  vehicle: 'Honda Civic',
-  licensePlate: 'ABC 1234',
-  rating: 4.9,
-  currentLatitude: 40.7589,
-  currentLongitude: -73.9851,
-  status: 'busy',
-};
+const mapDatabaseRestaurantToRestaurant = (dbRestaurant: any, menu: MenuItem[] = []): Restaurant => ({
+  id: dbRestaurant.id,
+  name: dbRestaurant.name,
+  cuisine: dbRestaurant.cuisine,
+  rating: Number(dbRestaurant.rating) || 0,
+  reviewCount: dbRestaurant.reviewCount || 0,
+  deliveryTime: dbRestaurant.deliveryTime,
+  deliveryFee: Number(dbRestaurant.deliveryFee) || 0,
+  minOrder: Number(dbRestaurant.minOrder) || 0,
+  image: dbRestaurant.image,
+  address: dbRestaurant.address,
+  phone: dbRestaurant.phone,
+  operatingHours: dbRestaurant.operatingHours,
+  menu,
+  isFavorite: false,
+  latitude: Number(dbRestaurant.latitude) || 0,
+  longitude: Number(dbRestaurant.longitude) || 0,
+});
 
-const mockMenuItems: MenuItem[] = [
-  {
-    id: Crypto.randomUUID(),
-    restaurantId: '',
-    name: 'Margherita Pizza',
-    description: 'Fresh tomatoes, mozzarella, basil, and olive oil on crispy thin crust',
-    price: 16.99,
-    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400',
-    category: 'Pizza',
-    customizations: [
-      {
-        id: '1',
-        name: 'Size',
-        options: [
-          { id: 's', name: 'Small (10")', price: 0 },
-          { id: 'm', name: 'Medium (12")', price: 3 },
-          { id: 'l', name: 'Large (14")', price: 5 },
-        ],
-        required: true,
-        maxSelections: 1,
-      },
-      {
-        id: '2',
-        name: 'Extra Toppings',
-        options: [
-          { id: 'pepperoni', name: 'Pepperoni', price: 2 },
-          { id: 'mushrooms', name: 'Mushrooms', price: 1.5 },
-          { id: 'olives', name: 'Olives', price: 1.5 },
-        ],
-        required: false,
-        maxSelections: 5,
-      },
-    ],
-    isPopular: true,
-  },
-  {
-    id: Crypto.randomUUID(),
-    restaurantId: '',
-    name: 'Caesar Salad',
-    description: 'Crisp romaine, parmesan, croutons with house-made caesar dressing',
-    price: 12.99,
-    image: 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=400',
-    category: 'Salads',
-    customizations: [
-      {
-        id: '1',
-        name: 'Add Protein',
-        options: [
-          { id: 'chicken', name: 'Grilled Chicken', price: 4 },
-          { id: 'shrimp', name: 'Shrimp', price: 6 },
-          { id: 'salmon', name: 'Salmon', price: 7 },
-        ],
-        required: false,
-        maxSelections: 1,
-      },
-    ],
-    isPopular: true,
-  },
-  {
-    id: Crypto.randomUUID(),
-    restaurantId: '',
-    name: 'Spaghetti Carbonara',
-    description: 'Classic Roman pasta with pancetta, eggs, pecorino, and black pepper',
-    price: 18.99,
-    image: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400',
-    category: 'Pasta',
-    customizations: [],
-    isPopular: false,
-  },
-  {
-    id: Crypto.randomUUID(),
-    restaurantId: '',
-    name: 'Tiramisu',
-    description: 'Traditional Italian dessert with espresso-soaked ladyfingers and mascarpone',
-    price: 8.99,
-    image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400',
-    category: 'Desserts',
-    customizations: [],
-    isPopular: true,
-  },
-  {
-    id: Crypto.randomUUID(),
-    restaurantId: '',
-    name: 'Bruschetta',
-    description: 'Toasted bread topped with fresh tomatoes, garlic, basil, and balsamic glaze',
-    price: 9.99,
-    image: 'https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?w=400',
-    category: 'Appetizers',
-    customizations: [],
-    isPopular: false,
-  },
-];
+const mapDatabaseMenuItemToMenuItem = (dbItem: any): MenuItem => ({
+  id: dbItem.id,
+  restaurantId: dbItem.restaurantId,
+  name: dbItem.name,
+  description: dbItem.description,
+  price: Number(dbItem.price) || 0,
+  image: dbItem.image,
+  category: dbItem.category,
+  customizations: [],
+  isPopular: dbItem.isPopular || false,
+});
 
-const createMockRestaurants = (): Restaurant[] => {
-  const restaurants: Restaurant[] = [
-    {
-      id: Crypto.randomUUID(),
-      name: "Bella Italia",
-      cuisine: "Italian",
-      rating: 4.8,
-      reviewCount: 324,
-      deliveryTime: "25-35 min",
-      deliveryFee: 2.99,
-      minOrder: 15,
-      image: "https://images.unsplash.com/photo-1543353071-873f17a7a088?w=800",
-      address: "123 Main Street, New York",
-      phone: "+1 555-123-4567",
-      operatingHours: "11:00 AM - 10:00 PM",
-      menu: mockMenuItems.map(item => ({ ...item, restaurantId: '' })),
-      isFavorite: false,
-      latitude: 40.7580,
-      longitude: -73.9855,
-    },
-    {
-      id: Crypto.randomUUID(),
-      name: "Sakura Sushi",
-      cuisine: "Japanese",
-      rating: 4.9,
-      reviewCount: 512,
-      deliveryTime: "30-40 min",
-      deliveryFee: 3.99,
-      minOrder: 20,
-      image: "https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=800",
-      address: "456 Oak Avenue, New York",
-      phone: "+1 555-234-5678",
-      operatingHours: "12:00 PM - 11:00 PM",
-      menu: [
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Dragon Roll',
-          description: 'Shrimp tempura, cucumber, topped with avocado and eel sauce',
-          price: 15.99,
-          image: 'https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=400',
-          category: 'Rolls',
-          customizations: [],
-          isPopular: true,
-        },
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Salmon Sashimi',
-          description: 'Fresh Atlantic salmon, 8 pieces',
-          price: 18.99,
-          image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400',
-          category: 'Sashimi',
-          customizations: [],
-          isPopular: true,
-        },
-      ],
-      isFavorite: true,
-      latitude: 40.7614,
-      longitude: -73.9776,
-    },
-    {
-      id: Crypto.randomUUID(),
-      name: "Burger Barn",
-      cuisine: "American",
-      rating: 4.6,
-      reviewCount: 289,
-      deliveryTime: "20-30 min",
-      deliveryFee: 1.99,
-      minOrder: 12,
-      image: "https://images.unsplash.com/photo-1550547660-d9450f859349?w=800",
-      address: "789 Elm Street, New York",
-      phone: "+1 555-345-6789",
-      operatingHours: "10:00 AM - 12:00 AM",
-      menu: [
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Classic Cheeseburger',
-          description: 'Angus beef, american cheese, lettuce, tomato, special sauce',
-          price: 13.99,
-          image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400',
-          category: 'Burgers',
-          customizations: [],
-          isPopular: true,
-        },
-      ],
-      isFavorite: false,
-      latitude: 40.7549,
-      longitude: -73.9840,
-    },
-    {
-      id: Crypto.randomUUID(),
-      name: "Taj Mahal",
-      cuisine: "Indian",
-      rating: 4.7,
-      reviewCount: 198,
-      deliveryTime: "35-45 min",
-      deliveryFee: 2.49,
-      minOrder: 18,
-      image: "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800",
-      address: "321 Curry Lane, New York",
-      phone: "+1 555-456-7890",
-      operatingHours: "11:30 AM - 10:30 PM",
-      menu: [
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Butter Chicken',
-          description: 'Tender chicken in rich tomato-cream sauce with aromatic spices',
-          price: 16.99,
-          image: 'https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=400',
-          category: 'Curry',
-          customizations: [],
-          isPopular: true,
-        },
-      ],
-      isFavorite: false,
-      latitude: 40.7520,
-      longitude: -73.9890,
-    },
-    {
-      id: Crypto.randomUUID(),
-      name: "Taco Loco",
-      cuisine: "Mexican",
-      rating: 4.5,
-      reviewCount: 256,
-      deliveryTime: "20-25 min",
-      deliveryFee: 1.49,
-      minOrder: 10,
-      image: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=800",
-      address: "555 Salsa Street, New York",
-      phone: "+1 555-567-8901",
-      operatingHours: "10:00 AM - 11:00 PM",
-      menu: [
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Street Tacos',
-          description: 'Three corn tortillas with carne asada, onions, cilantro',
-          price: 11.99,
-          image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=400',
-          category: 'Tacos',
-          customizations: [],
-          isPopular: true,
-        },
-      ],
-      isFavorite: true,
-      latitude: 40.7600,
-      longitude: -73.9920,
-    },
-    {
-      id: Crypto.randomUUID(),
-      name: "Golden Dragon",
-      cuisine: "Chinese",
-      rating: 4.4,
-      reviewCount: 445,
-      deliveryTime: "25-35 min",
-      deliveryFee: 2.99,
-      minOrder: 15,
-      image: "https://images.unsplash.com/photo-1563245372-f21724e3856d?w=800",
-      address: "888 Lucky Road, New York",
-      phone: "+1 555-678-9012",
-      operatingHours: "11:00 AM - 11:00 PM",
-      menu: [
-        {
-          id: Crypto.randomUUID(),
-          restaurantId: '',
-          name: 'Kung Pao Chicken',
-          description: 'Spicy stir-fried chicken with peanuts and vegetables',
-          price: 14.99,
-          image: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=400',
-          category: 'Main',
-          customizations: [],
-          isPopular: true,
-        },
-      ],
-      isFavorite: false,
-      latitude: 40.7565,
-      longitude: -73.9800,
-    },
-  ];
+const mapDatabaseAddressToAddress = (dbAddress: any): Address => ({
+  id: dbAddress.id,
+  label: dbAddress.label,
+  street: dbAddress.street,
+  apartment: dbAddress.apartment,
+  city: dbAddress.city,
+  zipcode: dbAddress.zipcode,
+  latitude: Number(dbAddress.latitude) || 0,
+  longitude: Number(dbAddress.longitude) || 0,
+  isDefault: dbAddress.isDefault || false,
+  instructions: dbAddress.instructions,
+});
 
-  return restaurants.map(r => ({
-    ...r,
-    menu: r.menu.map(item => ({ ...item, restaurantId: r.id })),
-  }));
-};
-
-const mockAddresses: Address[] = [
-  {
-    id: Crypto.randomUUID(),
-    label: 'Home',
-    street: '123 Frost Avenue',
-    apartment: 'Apt 4B',
-    city: 'New York',
-    zipcode: '10001',
-    latitude: 40.7505,
-    longitude: -73.9934,
-    isDefault: true,
-    instructions: 'Ring doorbell twice',
-  },
-  {
-    id: Crypto.randomUUID(),
-    label: 'Work',
-    street: '456 Corporate Plaza',
-    apartment: 'Floor 12',
-    city: 'New York',
-    zipcode: '10016',
-    latitude: 40.7484,
-    longitude: -73.9857,
-    isDefault: false,
-    instructions: 'Leave at front desk',
-  },
-];
+const mapDatabaseOrderToOrder = (dbOrder: any, items: CartItem[] = [], restaurant: Restaurant | null = null, address: Address | null = null, paymentMethod: PaymentMethod | null = null, driver: Driver | null = null): Order => ({
+  id: dbOrder.id,
+  restaurantId: dbOrder.restaurantId,
+  restaurant: restaurant || { id: '', name: '', cuisine: '', rating: 0, reviewCount: 0, deliveryTime: '', deliveryFee: 0, minOrder: 0, image: '', address: '', phone: '', operatingHours: '', menu: [], isFavorite: false, latitude: 0, longitude: 0 },
+  userId: dbOrder.userId,
+  items,
+  subtotal: Number(dbOrder.subtotal) || 0,
+  deliveryFee: Number(dbOrder.deliveryFee) || 0,
+  serviceFee: Number(dbOrder.serviceFee) || 0,
+  tip: Number(dbOrder.tip) || 0,
+  totalPrice: Number(dbOrder.totalPrice) || 0,
+  deliveryAddress: address || { id: '', label: '', street: '', apartment: '', city: '', zipcode: '', latitude: 0, longitude: 0, isDefault: false, instructions: '' },
+  paymentMethod: paymentMethod || { id: '', userId: '', type: '', last4: '', brand: '', isDefault: false },
+  status: dbOrder.status as OrderStatus,
+  driver: driver || null,
+  estimatedDelivery: dbOrder.estimatedDelivery ? new Date(dbOrder.estimatedDelivery) : new Date(),
+  createdAt: dbOrder.created_at ? new Date(dbOrder.created_at) : new Date(),
+  rating: dbOrder.rating,
+  review: dbOrder.review,
+});
 
 export const useStore = create<StoreState>((set, get) => ({
   restaurants: [],
@@ -385,8 +128,8 @@ export const useStore = create<StoreState>((set, get) => ({
   cartRestaurantId: null,
   orders: [],
   activeOrder: null,
-  addresses: mockAddresses,
-  selectedAddress: mockAddresses.find(a => a.isDefault) || null,
+  addresses: [],
+  selectedAddress: null,
   searchFilters: {
     query: '',
     cuisine: null,
@@ -401,9 +144,27 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchRestaurants: async () => {
     set({ isLoading: true, error: null });
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      const restaurants = createMockRestaurants();
-      set({ restaurants, isLoading: false });
+      const { data: restaurants, error } = await supabase
+        .from('restaurants')
+        .select('*');
+
+      if (error) throw error;
+
+      const restaurantsWithMenus: Restaurant[] = [];
+
+      for (const dbRestaurant of restaurants || []) {
+        const { data: menuItems, error: menuError } = await supabase
+          .from('menu_items')
+          .select('*')
+          .eq('restaurantId', dbRestaurant.id);
+
+        if (menuError) throw menuError;
+
+        const menu = (menuItems || []).map(mapDatabaseMenuItemToMenuItem);
+        restaurantsWithMenus.push(mapDatabaseRestaurantToRestaurant(dbRestaurant, menu));
+      }
+
+      set({ restaurants: restaurantsWithMenus, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to fetch restaurants', isLoading: false });
     }
@@ -438,7 +199,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addToCart: (menuItem, quantity, customizations = [], instructions = '') => {
     const { cart, cartRestaurantId } = get();
-    
+
     if (cartRestaurantId && cartRestaurantId !== menuItem.restaurantId) {
       set({ cart: [], cartRestaurantId: menuItem.restaurantId });
     }
@@ -507,7 +268,8 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
 
       const restaurant = restaurants.find(r => r.id === cartRestaurantId);
       if (!restaurant || !selectedAddress) {
@@ -516,26 +278,41 @@ export const useStore = create<StoreState>((set, get) => ({
 
       const totals = get().getCartTotal();
 
-      const order: Order = {
-        id: Crypto.randomUUID(),
-        restaurantId: restaurant.id,
-        restaurant,
-        userId: 'current-user',
-        items: [...cart],
-        subtotal: totals.subtotal,
-        deliveryFee: totals.deliveryFee,
-        serviceFee: totals.serviceFee,
-        tip,
-        totalPrice: totals.total + tip,
-        deliveryAddress: selectedAddress,
-        paymentMethod,
-        status: 'pending',
-        driver: null,
-        estimatedDelivery: new Date(Date.now() + 35 * 60 * 1000),
-        createdAt: new Date(),
-        rating: null,
-        review: null,
-      };
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          restaurantId: restaurant.id,
+          userId: user.id,
+          subtotal: totals.subtotal,
+          deliveryFee: totals.deliveryFee,
+          serviceFee: totals.serviceFee,
+          tip,
+          totalPrice: totals.total + tip,
+          deliveryAddressId: selectedAddress.id,
+          paymentMethodId: paymentMethod.id,
+          status: 'pending',
+          estimatedDelivery: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      for (const cartItem of cart) {
+        const { error: itemError } = await supabase
+          .from('order_items')
+          .insert({
+            orderId: orderData.id,
+            menuItemId: cartItem.menuItem.id,
+            quantity: cartItem.quantity,
+            specialInstructions: cartItem.specialInstructions,
+            totalPrice: cartItem.totalPrice,
+          });
+
+        if (itemError) throw itemError;
+      }
+
+      const order = mapDatabaseOrderToOrder(orderData, cart, restaurant, selectedAddress, paymentMethod);
 
       set(state => ({
         orders: [order, ...state.orders],
@@ -544,22 +321,6 @@ export const useStore = create<StoreState>((set, get) => ({
         cartRestaurantId: null,
         isLoading: false,
       }));
-
-      // Simulate order progression
-      setTimeout(() => get().updateOrderStatus(order.id, 'confirmed'), 5000);
-      setTimeout(() => get().updateOrderStatus(order.id, 'preparing'), 15000);
-      setTimeout(() => {
-        set(state => ({
-          orders: state.orders.map(o =>
-            o.id === order.id ? { ...o, driver: mockDriver } : o
-          ),
-          activeOrder: state.activeOrder?.id === order.id
-            ? { ...state.activeOrder, driver: mockDriver }
-            : state.activeOrder,
-        }));
-        get().updateOrderStatus(order.id, 'picked_up');
-      }, 25000);
-      setTimeout(() => get().updateOrderStatus(order.id, 'in_transit'), 30000);
 
       return order;
     } catch (error) {
@@ -571,8 +332,87 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchOrders: async () => {
     set({ isLoading: true, error: null });
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      set({ isLoading: false });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: ordersData, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('userId', user.id)
+        .order('created_at', { ascending: false });
+
+      if (ordersError) throw ordersError;
+
+      const orders: Order[] = [];
+
+      for (const dbOrder of ordersData || []) {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from('order_items')
+          .select('*')
+          .eq('orderId', dbOrder.id);
+
+        if (itemsError) throw itemsError;
+
+        const { data: restaurantData, error: restaurantError } = await supabase
+          .from('restaurants')
+          .select('*')
+          .eq('id', dbOrder.restaurantId)
+          .single();
+
+        if (restaurantError) throw restaurantError;
+
+        const { data: addressData, error: addressError } = await supabase
+          .from('addresses')
+          .select('*')
+          .eq('id', dbOrder.deliveryAddressId)
+          .single();
+
+        if (addressError && addressError.code !== 'PGRST116') throw addressError;
+
+        const { data: paymentData, error: paymentError } = await supabase
+          .from('payment_methods')
+          .select('*')
+          .eq('id', dbOrder.paymentMethodId)
+          .single();
+
+        if (paymentError && paymentError.code !== 'PGRST116') throw paymentError;
+
+        const { data: driverData, error: driverError } = await supabase
+          .from('drivers')
+          .select('*')
+          .eq('id', dbOrder.driverId)
+          .single();
+
+        if (driverError && driverError.code !== 'PGRST116') throw driverError;
+
+        const cartItems: CartItem[] = (itemsData || []).map(item => ({
+          id: item.id,
+          menuItem: {
+            id: item.menuItemId,
+            restaurantId: dbOrder.restaurantId,
+            name: '',
+            description: '',
+            price: Number(item.totalPrice) / item.quantity,
+            image: '',
+            category: '',
+            customizations: [],
+            isPopular: false,
+          },
+          quantity: item.quantity,
+          selectedCustomizations: [],
+          specialInstructions: item.specialInstructions || '',
+          totalPrice: Number(item.totalPrice),
+        }));
+
+        const restaurant = restaurantData ? mapDatabaseRestaurantToRestaurant(restaurantData) : null;
+        const address = addressData ? mapDatabaseAddressToAddress(addressData) : null;
+        const payment = paymentData ? { id: paymentData.id, userId: paymentData.userId, type: paymentData.type, last4: paymentData.last4, brand: paymentData.brand, isDefault: paymentData.isDefault } : null;
+        const driver = driverData ? { id: driverData.id, name: driverData.name, phone: driverData.phone, avatar: driverData.avatar, vehicle: driverData.vehicle, licensePlate: driverData.licensePlate, rating: Number(driverData.rating), currentLatitude: Number(driverData.currentLatitude), currentLongitude: Number(driverData.currentLongitude), status: driverData.status } : null;
+
+        orders.push(mapDatabaseOrderToOrder(dbOrder, cartItems, restaurant, address, payment, driver));
+      }
+
+      set({ orders, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to fetch orders', isLoading: false });
     }
@@ -593,12 +433,24 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
   },
 
-  rateOrder: (orderId, rating, review) => {
-    set(state => ({
-      orders: state.orders.map(o =>
-        o.id === orderId ? { ...o, rating, review } : o
-      ),
-    }));
+  rateOrder: async (orderId, rating, review) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ rating, review })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      set(state => ({
+        orders: state.orders.map(o =>
+          o.id === orderId ? { ...o, rating, review } : o
+        ),
+      }));
+    } catch (error) {
+      set({ error: 'Failed to rate order' });
+      throw error;
+    }
   },
 
   reorder: (orderId) => {
@@ -619,38 +471,110 @@ export const useStore = create<StoreState>((set, get) => ({
     });
   },
 
-  addAddress: (addressData) => {
-    const address: Address = {
-      ...addressData,
-      id: Crypto.randomUUID(),
-    };
-    set(state => ({
-      addresses: [...state.addresses, address],
-    }));
+  addAddress: async (addressData) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: newAddress, error } = await supabase
+        .from('addresses')
+        .insert({
+          userId: user.id,
+          label: addressData.label,
+          street: addressData.street,
+          apartment: addressData.apartment,
+          city: addressData.city,
+          zipcode: addressData.zipcode,
+          latitude: addressData.latitude,
+          longitude: addressData.longitude,
+          isDefault: addressData.isDefault || false,
+          instructions: addressData.instructions,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const address = mapDatabaseAddressToAddress(newAddress);
+      set(state => ({
+        addresses: [...state.addresses, address],
+      }));
+    } catch (error) {
+      set({ error: 'Failed to add address' });
+      throw error;
+    }
   },
 
-  updateAddress: (id, updates) => {
-    set(state => ({
-      addresses: state.addresses.map(a =>
-        a.id === id ? { ...a, ...updates } : a
-      ),
-    }));
+  updateAddress: async (id, updates) => {
+    try {
+      const { error } = await supabase
+        .from('addresses')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      set(state => ({
+        addresses: state.addresses.map(a =>
+          a.id === id ? { ...a, ...updates } : a
+        ),
+      }));
+    } catch (error) {
+      set({ error: 'Failed to update address' });
+      throw error;
+    }
   },
 
-  deleteAddress: (id) => {
-    set(state => ({
-      addresses: state.addresses.filter(a => a.id !== id),
-      selectedAddress: state.selectedAddress?.id === id ? null : state.selectedAddress,
-    }));
+  deleteAddress: async (id) => {
+    try {
+      const { error } = await supabase
+        .from('addresses')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      set(state => ({
+        addresses: state.addresses.filter(a => a.id !== id),
+        selectedAddress: state.selectedAddress?.id === id ? null : state.selectedAddress,
+      }));
+    } catch (error) {
+      set({ error: 'Failed to delete address' });
+      throw error;
+    }
   },
 
-  setDefaultAddress: (id) => {
-    set(state => ({
-      addresses: state.addresses.map(a => ({
-        ...a,
-        isDefault: a.id === id,
-      })),
-    }));
+  setDefaultAddress: async (id) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('addresses')
+        .update({ isDefault: true })
+        .eq('id', id)
+        .eq('userId', user.id);
+
+      if (error) throw error;
+
+      const { error: resetError } = await supabase
+        .from('addresses')
+        .update({ isDefault: false })
+        .eq('userId', user.id)
+        .neq('id', id);
+
+      if (resetError) throw resetError;
+
+      set(state => ({
+        addresses: state.addresses.map(a => ({
+          ...a,
+          isDefault: a.id === id,
+        })),
+      }));
+    } catch (error) {
+      set({ error: 'Failed to set default address' });
+      throw error;
+    }
   },
 
   selectAddress: (id) => {
